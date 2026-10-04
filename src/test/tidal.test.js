@@ -224,6 +224,38 @@ describe('TIDAL service', () => {
     });
   });
 
+  it('reads the playlist owner with include, never the INTERNAL-only includeLinkage', async () => {
+    const requests = [];
+    globalThis.fetch = async (url) => {
+      const parsed = new URL(String(url));
+      requests.push(parsed);
+      return jsonResponse({
+        data: { id: PLAYLIST_ID, type: 'playlists', attributes: { name: 'Mine' }, relationships: { owners: { data: [{ id: '42', type: 'users' }] } } },
+      });
+    };
+    const playlist = await createTidalService().getPlaylist('token', PLAYLIST_ID);
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requests[0].searchParams.getAll('include'), ['owners']);
+    assert.equal(requests[0].searchParams.has('includeLinkage'), false);
+    assert.equal(playlist.ownerId, '42');
+  });
+
+  it('falls back to a plain playlist read when the owner include is refused', async () => {
+    const requests = [];
+    globalThis.fetch = async (url) => {
+      const parsed = new URL(String(url));
+      requests.push(parsed);
+      if (parsed.searchParams.has('include')) {
+        return jsonResponse({ errors: [{ status: '400', detail: 'include requires INTERNAL access tier' }] }, 400);
+      }
+      return jsonResponse({ data: { id: PLAYLIST_ID, type: 'playlists', attributes: { name: 'Plain' } } });
+    };
+    const playlist = await createTidalService().getPlaylist('token', PLAYLIST_ID);
+    assert.equal(requests.length, 2);
+    assert.equal(playlist.name, 'Plain');
+    assert.equal(playlist.ownerId, '');
+  });
+
   it('retries a rate-limited request after Retry-After', async () => {
     let calls = 0;
     globalThis.fetch = async () => {

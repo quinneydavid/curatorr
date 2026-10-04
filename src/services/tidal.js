@@ -343,10 +343,18 @@ export function createTidalService(ctx = {}) {
   async function getPlaylist(accessToken, playlistId, { countryCode } = {}) {
     const id = String(playlistId || '').trim();
     if (!id) throw new Error('playlistId is required.');
-    const payload = await fetchApi(`/playlists/${encodeURIComponent(id)}`, accessToken, {
-      countryCode: normalizeCountryCode(countryCode, defaultCountryCode),
-      includeLinkage: ['owners'],
-    });
+    const path = `/playlists/${encodeURIComponent(id)}`;
+    const country = normalizeCountryCode(countryCode, defaultCountryCode);
+    // `include` populates the owners linkage (`includeLinkage` is INTERNAL-tier only).
+    // The owner only drives the display name, so fall back to a plain read if refused.
+    let payload;
+    try {
+      payload = await fetchApi(path, accessToken, { countryCode: country, include: ['owners'] });
+    } catch (err) {
+      if (Number(err?.status || 0) !== 400) throw err;
+      log('warn', 'playlist.owner.unavailable', `TIDAL refused owner include for playlist ${id}: ${err.message}`, { playlistId: id });
+      payload = await fetchApi(path, accessToken, { countryCode: country });
+    }
     return mapTidalPlaylist(payload?.data);
   }
 
