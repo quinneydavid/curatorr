@@ -1,5 +1,14 @@
 # Release Notes
 
+## v0.1.106 (2026-10-04)
+
+- Added a playlist watch folder. Admins set a folder in **Settings → Playlists → Playlist Watch Folder**, and Curatorr imports every `.m3u`/`.m3u8` file in it as a playlist, refreshes playlists whose file changes, and skips unchanged files.
+- An image with the same base name as a playlist file (`.jpg`, `.png` or `.webp`, up to 5 MB) is applied as the playlist artwork on Plex.
+- Watch-folder playlists belong to one admin-chosen user and can be shared as global playlists. A playlist whose file is removed is kept and marked as missing its source, or deleted if that option is on.
+- Added a **Playlist Watch Folder** job, every 15 minutes by default, with a **Scan now** button and a per-file status list in the settings card.
+- Fixed TIDAL playlist previews and imports failing with "includeLinkage requires INTERNAL access tier" for normal TIDAL developer apps.
+- Added regression coverage for watch-folder imports, refreshes, artwork, removal, and the TIDAL playlist request.
+
 ## v0.1.105 (2026-10-03)
 
 - Added playlist backup and restore. **Playlists → Back up and restore playlists** exports a `.curatorr.json` file with smart playlist rules, global playlists, imported and static track lists, artwork, and optional system playlist settings. Restoring it rebuilds the playlists against the current library, on the same server or a new one.
