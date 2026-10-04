@@ -126,6 +126,7 @@ This tab requires an actual admin account. No extra container variable is requir
 - song skip limit
 - Crescive and Curative starting-position rules
 - addition and subtraction rules
+- playlist watch folder: folder path, owner, global sharing, and removal of playlists whose file is deleted (admins only; see [Playlist Imports](Playlist-Imports.md#watch-folder))
 
 The Playlists tab contains the shared defaults and system-playlist configuration. Personal, blended, and global rule-based playlists are built from the main [Playlists page](Smart-Playlists.md).
 
@@ -150,6 +151,8 @@ The Playlists tab contains the shared defaults and system-playlist configuration
 - enable or disable background jobs
 - adjust intervals
 - run jobs manually
+
+**Playlist Watch Folder** scans the configured folder for new and changed playlist files. It does nothing until the watch folder is turned on in the Playlists tab.
 
 Use **Artist Pipeline Rebuild** to refresh recommendations, **Master Track Cache Refresh** after library changes, and **Track Analysis Pipeline** for audio enrichment. These jobs have different purposes; playlist rebuild/refresh depends on the library cache already being current.
 

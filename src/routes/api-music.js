@@ -1,5 +1,6 @@
 // Music stats, smart playlist management, and Lidarr integration
 
+import fs from 'fs';
 import path from 'path';
 import { replacePlexPlaylistItems } from '../services/playlists.js';
 import { getMusicAssistantNowPlaying } from '../services/music-assistant/index.js';
@@ -66,6 +67,7 @@ import {
   deleteUserGeneratedPlaylist,
   setCustomPlaylistAudience,
   setAllCopiesPlaylistAudience,
+  listGeneratedPlaylistUserIdsByKey,
   previewGlobalPlaylist,
   getAlbumPopularTrackRanks,
   getArtistTagMap,
@@ -91,6 +93,12 @@ import {
   parsePlaylistArtworkDataUrl,
   savePlaylistArtworkBuffer,
 } from '../services/playlist-artwork.js';
+import {
+  PLAYLIST_WATCH_SOURCE_TYPE,
+  buildPlaylistWatchSourceRef,
+  createPlaylistWatchFolderService,
+  normalizePlaylistWatchConfig,
+} from '../services/playlist-watch-folder.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const DISCOVERY_ART_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -2569,6 +2577,7 @@ export function registerApiMusic(app, ctx) {
     let sourceRef = String(playlist?.sourceRef || '').trim();
     let sourceTitle = String(playlist?.sourceTitle || '').trim();
     let sourceOwner = String(playlist?.sourceOwner || '').trim();
+    let sourceContent = playlist?.sourceContent;
 
     if (sourceType === 'curatorr-backup') {
       return refreshCustomPlaylistFromStoredTracks(userPlexId, playlist);
@@ -2639,6 +2648,12 @@ export function registerApiMusic(app, ctx) {
       unmatched = matchResult.unmatched;
       sourceTitle = String(playlist?.sourceFilename || sourceTitle || playlist.playlistTitle || 'M3U Playlist').trim();
       sourceOwner = String(sourceOwner || 'M3U').trim();
+    } else if (sourceType === PLAYLIST_WATCH_SOURCE_TYPE) {
+      // Prefer the file as it is now; fall back to the stored copy if it has gone.
+      sourceContent = normalizeM3uImportContent(readPlaylistWatchFile(playlist?.sourceFilename) ?? playlist?.sourceContent ?? '');
+      const matchResult = buildM3uImportMatchResult(sourceContent);
+      trackRefs = matchResult.trackRefs;
+      unmatched = matchResult.unmatched;
     } else {
       throw new Error('This imported playlist source cannot be refreshed.');
     }
@@ -2648,6 +2663,7 @@ export function registerApiMusic(app, ctx) {
       sourceRef,
       sourceTitle,
       sourceOwner,
+      sourceContent,
       importedSyncPeriod: playlist.importedSyncPeriod || 'disabled',
       trackCount: trackRefs.length,
       missingCount: unmatched.length,
@@ -2696,6 +2712,71 @@ export function registerApiMusic(app, ctx) {
   }
 
   ctx.refreshScheduledImportedPlaylistsForUser = refreshScheduledImportedPlaylistsForUser;
+
+  // Reads a watch-folder playlist by its relative path, or returns null when the
+  // folder is unset, the path escapes it, or the file is gone.
+  function readPlaylistWatchFile(relPath) {
+    const root = normalizePlaylistWatchConfig(loadConfig().playlistWatchFolder).path;
+    const rel = String(relPath || '').trim();
+    if (!root || !rel) return null;
+    const rootPath = path.resolve(root);
+    const filePath = path.resolve(rootPath, rel);
+    if (!filePath.startsWith(rootPath + path.sep)) return null;
+    try {
+      return fs.readFileSync(filePath, 'utf8');
+    } catch (_err) {
+      return null;
+    }
+  }
+
+  async function syncPlaylistWatchGlobal(userPlexId, playlistKey) {
+    setCustomPlaylistAudience(db, userPlexId, playlistKey, 'global');
+    const playlist = listUserGeneratedPlaylists(db, userPlexId, { activeOnly: false })
+      .find((entry) => entry.playlistKey === playlistKey);
+    if (playlist) await playlistService.syncGlobalCustomPlaylist(userPlexId, playlist);
+  }
+
+  const playlistWatchFolderService = createPlaylistWatchFolderService({
+    db,
+    loadConfig,
+    pushLog,
+    safeMessage,
+    async importPlaylist({ userPlexId, relPath, content }) {
+      const normalized = normalizeM3uImportContent(content);
+      const matchResult = buildM3uImportMatchResult(normalized);
+      return createImportedCustomPlaylist(userPlexId, resolveM3uPlaylistTitle(relPath), matchResult.trackRefs, {
+        sourceType: PLAYLIST_WATCH_SOURCE_TYPE,
+        sourceRef: buildPlaylistWatchSourceRef(relPath),
+        sourceTitle: relPath,
+        sourceOwner: 'Watch folder',
+        sourceContent: normalized,
+        sourceFilename: relPath,
+        unmatchedTracks: matchResult.unmatched,
+      });
+    },
+    playlistExists(userPlexId, playlistKey) {
+      return listUserGeneratedPlaylists(db, userPlexId, { activeOnly: false })
+        .some((entry) => entry.playlistKey === playlistKey);
+    },
+    async applyArtwork({ userPlexId, playlistKey, buffer, ext, nameHint }) {
+      if (!buffer) {
+        await playlistService.updateGeneratedPlaylistArtwork(userPlexId, playlistKey, { mode: 'auto' });
+        return;
+      }
+      const customArtworkAsset = savePlaylistArtworkBuffer(buffer, ext, nameHint, 'watch');
+      if (!customArtworkAsset) throw new Error('Could not save playlist artwork.');
+      await playlistService.updateGeneratedPlaylistArtwork(userPlexId, playlistKey, { mode: 'custom', customArtworkAsset });
+    },
+    syncGlobal: syncPlaylistWatchGlobal,
+    async removePlaylist(playlistKey) {
+      for (const userPlexId of listGeneratedPlaylistUserIdsByKey(db, playlistKey)) {
+        await playlistService.setGeneratedActive(userPlexId, playlistKey, false).catch(() => {});
+        deleteUserGeneratedPlaylist(db, userPlexId, playlistKey);
+      }
+    },
+  });
+
+  ctx.scanPlaylistWatchFolder = () => playlistWatchFolderService.scan();
 
   function isLookupArtistAlreadyAdded(item) {
     const addedValue = String(item?.added || '').trim();

@@ -12,6 +12,7 @@ export const IMPORTED_PLAYLIST_SOURCE_TYPES = Object.freeze([
   'lastfm-station',
   'listenbrainz-playlist',
   'm3u-file',
+  'm3u-watch',
   'curatorr-backup',
 ]);
 

@@ -36,6 +36,8 @@ services:
       - ./config:/app/config
       - ./data:/app/data
       - ./data/icons/custom:/app/public/icons/custom
+      # Optional: playlist watch folder (set the path in Settings -> Playlists).
+      # - ./playlists:/app/playlists:ro
     network_mode: bridge
     restart: unless-stopped
 

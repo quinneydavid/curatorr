@@ -8,7 +8,7 @@ const __dirname = path.dirname(__filename);
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', '..', 'data');
 const PLAYLIST_ARTWORK_DIR = path.join(DATA_DIR, 'playlist-artwork');
 const PLAYLIST_ARTWORK_ROUTE_BASE = '/api/music/playlists/artwork';
-const PLAYLIST_ARTWORK_MAX_BYTES = 5 * 1024 * 1024;
+export const PLAYLIST_ARTWORK_MAX_BYTES = 5 * 1024 * 1024;
 const PLAYLIST_ARTWORK_ALLOWED_MIME = new Set(['image/png', 'image/jpeg', 'image/webp']);
 
 function slugify(value) {

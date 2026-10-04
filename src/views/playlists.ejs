@@ -56,7 +56,7 @@
           if (source === 'youtube-playlist') return 'imported-youtube';
           if (source === 'lastfm-station') return 'imported-lastfm';
           if (source === 'listenbrainz-playlist') return 'imported-listenbrainz';
-          if (source === 'm3u-file') return 'imported-m3u';
+          if (source === 'm3u-file' || source === 'm3u-watch') return 'imported-m3u';
           if (source === 'curatorr-backup') return 'imported-backup';
           if (source.startsWith('plex-')) return 'imported-plex';
           const type = String(playlistType || '').trim().toLowerCase();
@@ -296,7 +296,7 @@
                         <div class="plex-name cur-discover-result-name cur-playlist-carousel-title"><%= p.playlistTitle || 'Playlist' %></div>
                         <div class="plex-meta cur-discover-result-meta cur-playlist-carousel-meta"><%= Number(p.trackCount || 0).toLocaleString() %> tracks<% if (Number(p.missingCount || 0) > 0) { %> • <%= Number(p.missingCount || 0).toLocaleString() %> missing<% } %></div>
                         <div class="plex-meta cur-discover-result-meta cur-playlist-carousel-meta<%= p.active === false ? ' cur-playlist-carousel-meta--disabled' : '' %>"><%= p.active === false ? (p.backupOnly ? 'Backup only, not in ' + _msLabel : 'Disabled in Plex') : (p.playlistKind === 'draft' ? 'Draft saved in Curatorr' : 'Curatorr updated ' + fmtDate(p.curatorrUpdatedAt)) %></div>
-                        <% if (p.playlistType === 'custom' && importedSourceTypes.filter(function(t) { return t !== 'm3u-file' && t !== 'curatorr-backup'; }).includes(p.sourceType)) { %>
+                        <% if (p.playlistType === 'custom' && importedSourceTypes.filter(function(t) { return t !== 'm3u-file' && t !== 'm3u-watch' && t !== 'curatorr-backup'; }).includes(p.sourceType)) { %>
                         <div class="plex-meta cur-discover-result-meta cur-playlist-carousel-meta"><%= (p.importedSyncPeriod || 'disabled') === 'daily' ? 'Auto-refresh every day' : ((p.importedSyncPeriod || 'disabled') === 'weekly' ? 'Auto-refresh every week' : ((p.importedSyncPeriod || 'disabled') === 'monthly' ? 'Auto-refresh every month' : 'Auto-refresh disabled')) %></div>
                         <% } %>
                       </div>
@@ -3877,7 +3877,7 @@
       if (headerEl) headerEl.textContent = 'Edit Imported Playlist: ' + String(card.dataset.plTitle || 'Playlist');
       if (titleEl) titleEl.value = String(card.dataset.plTitle || '').trim();
       var editedSourceType = String(card.dataset.playlistSourceType || '').trim().toLowerCase();
-      var isM3uSource = editedSourceType === 'm3u-file';
+      var isM3uSource = editedSourceType === 'm3u-file' || editedSourceType === 'm3u-watch';
       if (syncEl) {
         syncEl.value = normalizeImportedSyncPeriod(card.dataset.playlistImportedSyncPeriod || 'disabled');
         syncEl.disabled = false;

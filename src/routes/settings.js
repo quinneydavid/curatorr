@@ -1,7 +1,8 @@
 import crypto from 'crypto';
-import { dedupeMasterArtistNames, getUserPreferences, saveUserPreferences, updateLastfmBackfillCursor, PRESET_VALUES, previewGlobalPlaylist, getAllUserIds, getGenresFromMaster, getMoodsFromMaster, getArtistCountriesFromMaster, getAllLastfmTags, getAllTrackDecadeTags, getMasterTracks, getDistinctLibraryKeys, getDistinctPathSegments, getFeaturePresetAvailabilityFromDb } from '../db.js';
+import { dedupeMasterArtistNames, getUserPreferences, saveUserPreferences, updateLastfmBackfillCursor, PRESET_VALUES, previewGlobalPlaylist, getAllUserIds, listPlaylistWatchFiles, getGenresFromMaster, getMoodsFromMaster, getArtistCountriesFromMaster, getAllLastfmTags, getAllTrackDecadeTags, getMasterTracks, getDistinctLibraryKeys, getDistinctPathSegments, getFeaturePresetAvailabilityFromDb } from '../db.js';
 import { applyFeaturePresetFilters, applyTrackFiltersWithReport } from '../services/playlists.js';
 import { JOB_DEFS } from '../services/jobs.js';
+import { normalizePlaylistWatchConfig } from '../services/playlist-watch-folder.js';
 import { parsePlaylistArtworkDataUrl, savePlaylistArtworkBuffer } from '../services/playlist-artwork.js';
 import { pruneDeselectedPlexLibraries } from '../services/plex-library-cleanup.js';
 import { runLastfmHistoryBackfillForUser } from '../services/lastfm-backfill.js';
@@ -635,6 +636,20 @@ export function registerSettings(app, ctx) {
       fetchPlexHomeUsers,
       parsePlexUsers,
     );
+    const playlistWatchFolder = normalizePlaylistWatchConfig(config.playlistWatchFolder);
+    // Owners are users who completed setup (the same set global playlists sync to).
+    const playlistWatchOwnerOptions = (() => {
+      const names = new Map((blendableUsers || []).map((u) => [String(u.id || ''), String(u.name || '')]));
+      let ids = [];
+      try {
+        ids = getAllUserIds(db).filter((id) => id && getUserPreferences(db, id)?.userWizardCompleted);
+      } catch { ids = []; }
+      if (playlistWatchFolder.ownerUserId && !ids.includes(playlistWatchFolder.ownerUserId)) ids.push(playlistWatchFolder.ownerUserId);
+      return ids
+        .map((id) => ({ id, name: names.get(id) && names.get(id) !== id ? `${names.get(id)} (${id})` : id }))
+        .sort((a, b) => a.name.localeCompare(b.name));
+    })();
+    const playlistWatchFiles = (() => { try { return listPlaylistWatchFiles(db); } catch { return []; } })();
     const playlistFeatureCoverage = (() => {
       try { return getFeaturePresetAvailabilityFromDb(db); } catch { return { totalTracks: 0, presets: {} }; }
     })();
@@ -678,6 +693,10 @@ export function registerSettings(app, ctx) {
       themeDefaultsError,
       lastfmRegionOptions: buildLastfmRegionOptions(renderedConfig.discovery?.region || DEFAULT_LASTFM_REGION),
       globalPlaylists: config.globalPlaylists || [],
+      playlistWatchFolder,
+      playlistWatchOwnerOptions,
+      playlistWatchFiles,
+      playlistWatchJobStatus: jobService?.getStatus()?.playlistWatchFolder || null,
       allUserIds: (() => { try { return db.prepare('SELECT DISTINCT user_plex_id FROM artist_stats').all().map((r) => r.user_plex_id); } catch { return []; } })(),
       blendableUsers,
       playlistFeatureCoverage,
@@ -1119,6 +1138,26 @@ export function registerSettings(app, ctx) {
       }
     }
     return res.redirect('/settings?tab=smart-playlist&success=1');
+  });
+
+  // ── Playlist watch folder ─────────────────────────────────────────────────
+
+  app.post('/settings/playlist-watch-folder', requireAdmin, (req, res) => {
+    const config = loadConfig();
+    const next = normalizePlaylistWatchConfig({
+      enabled: Boolean(req.body?.enabled),
+      path: req.body?.path,
+      ownerUserId: req.body?.ownerUserId,
+      audience: req.body?.audience === 'global' ? 'global' : 'personal',
+      removeMissing: Boolean(req.body?.removeMissing),
+    });
+    if (next.enabled && (!next.path || !next.ownerUserId)) {
+      return res.redirect('/settings?tab=smart-playlist&error=' + encodeURIComponent('Set a folder path and an owner before enabling the playlist watch folder.') + '#playlist-watch-folder');
+    }
+    saveConfig({ ...config, playlistWatchFolder: next });
+    pushLog({ level: 'info', app: 'settings', action: 'playlist-watch-folder.save', message: `Playlist watch folder ${next.enabled ? `enabled for ${next.path}` : 'disabled'}` });
+    if (next.enabled) jobService?.runJob('playlistWatchFolder').catch(() => {});
+    return res.redirect('/settings?tab=smart-playlist&success=1#playlist-watch-folder');
   });
 
   // ── Crescive / Curative / rule settings ──────────────────────────────────

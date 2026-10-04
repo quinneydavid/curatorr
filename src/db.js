@@ -360,6 +360,22 @@ CREATE TABLE IF NOT EXISTS imported_playlist_unmatched (
 CREATE INDEX IF NOT EXISTS idx_imported_playlist_unmatched_user_playlist
   ON imported_playlist_unmatched(user_plex_id, playlist_key, position);
 
+-- Files seen in the playlist watch folder, keyed by path relative to the folder.
+CREATE TABLE IF NOT EXISTS playlist_watch_files (
+  rel_path        TEXT PRIMARY KEY,
+  user_plex_id    TEXT NOT NULL DEFAULT '',
+  playlist_key    TEXT NOT NULL DEFAULT '',
+  file_size       INTEGER NOT NULL DEFAULT 0,
+  file_mtime_ms   INTEGER NOT NULL DEFAULT 0,
+  content_hash    TEXT NOT NULL DEFAULT '',
+  artwork_hash    TEXT NOT NULL DEFAULT '',
+  status          TEXT NOT NULL DEFAULT 'pending',
+  message         TEXT NOT NULL DEFAULT '',
+  last_seen_at    INTEGER NOT NULL DEFAULT 0,
+  last_imported_at INTEGER NOT NULL DEFAULT 0,
+  updated_at      INTEGER NOT NULL DEFAULT (unixepoch('now') * 1000)
+);
+
 CREATE TABLE IF NOT EXISTS playlist_artist_state (
   playlist_key      TEXT NOT NULL,
   user_plex_id      TEXT NOT NULL,
@@ -3837,6 +3853,70 @@ export function setCustomPlaylistAudience(db, userPlexId, playlistKey, audience)
     : 'personal';
   db.prepare('UPDATE user_generated_playlists SET audience = ?, updated_at = ? WHERE user_plex_id = ? AND playlist_key = ?')
     .run(normalized, Date.now(), userPlexId, playlistKey);
+}
+
+// ─── Playlist watch folder ────────────────────────────────────────────────────
+
+function mapPlaylistWatchFile(row) {
+  return {
+    relPath: row.rel_path,
+    userPlexId: row.user_plex_id,
+    playlistKey: row.playlist_key,
+    fileSize: Number(row.file_size || 0),
+    fileMtimeMs: Number(row.file_mtime_ms || 0),
+    contentHash: row.content_hash,
+    artworkHash: row.artwork_hash,
+    status: row.status,
+    message: row.message,
+    lastSeenAt: Number(row.last_seen_at || 0),
+    lastImportedAt: Number(row.last_imported_at || 0),
+    updatedAt: Number(row.updated_at || 0),
+  };
+}
+
+export function listPlaylistWatchFiles(db) {
+  return db.prepare('SELECT * FROM playlist_watch_files ORDER BY rel_path COLLATE NOCASE ASC').all().map(mapPlaylistWatchFile);
+}
+
+export function savePlaylistWatchFile(db, entry) {
+  const now = Date.now();
+  db.prepare(`
+    INSERT INTO playlist_watch_files (
+      rel_path, user_plex_id, playlist_key, file_size, file_mtime_ms, content_hash, artwork_hash,
+      status, message, last_seen_at, last_imported_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ON CONFLICT(rel_path) DO UPDATE SET
+      user_plex_id = excluded.user_plex_id, playlist_key = excluded.playlist_key,
+      file_size = excluded.file_size, file_mtime_ms = excluded.file_mtime_ms,
+      content_hash = excluded.content_hash, artwork_hash = excluded.artwork_hash,
+      status = excluded.status, message = excluded.message,
+      last_seen_at = excluded.last_seen_at, last_imported_at = excluded.last_imported_at,
+      updated_at = excluded.updated_at
+  `).run(
+    String(entry.relPath || ''),
+    String(entry.userPlexId || ''),
+    String(entry.playlistKey || ''),
+    Number(entry.fileSize || 0),
+    Math.round(Number(entry.fileMtimeMs || 0)),
+    String(entry.contentHash || ''),
+    String(entry.artworkHash || ''),
+    String(entry.status || 'pending'),
+    String(entry.message || ''),
+    Number(entry.lastSeenAt || 0),
+    Number(entry.lastImportedAt || 0),
+    now,
+  );
+}
+
+export function deletePlaylistWatchFile(db, relPath) {
+  db.prepare('DELETE FROM playlist_watch_files WHERE rel_path = ?').run(String(relPath || ''));
+}
+
+// Every user holding a copy of a playlist key (global imports are copied per user).
+export function listGeneratedPlaylistUserIdsByKey(db, playlistKey) {
+  return db.prepare('SELECT user_plex_id FROM user_generated_playlists WHERE playlist_key = ?')
+    .all(String(playlistKey || ''))
+    .map((row) => row.user_plex_id);
 }
 
 export function setAllCopiesPlaylistAudience(db, playlistKey, audience) {

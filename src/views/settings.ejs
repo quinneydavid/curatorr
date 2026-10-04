@@ -1488,6 +1488,102 @@
             }
             </script>
 
+            <%# ── Playlist watch folder ───────────────────────────────────── %>
+            <% if (actualRole === 'admin') { %>
+            <% const _pw = playlistWatchFolder || {}; %>
+            <form method="post" action="/settings/playlist-watch-folder" class="settings-form" id="playlist-watch-folder">
+              <input type="hidden" name="_csrf" value="<%= csrfToken %>" />
+              <div class="settings-card">
+                <div class="settings-card-title">Playlist Watch Folder</div>
+                <div class="settings-card-sub">Curatorr checks this folder on the <strong>Playlist Watch Folder</strong> job schedule. Each <code class="settings-inline-code">.m3u</code> or <code class="settings-inline-code">.m3u8</code> file becomes one imported playlist, named after the file. Editing a file refreshes its playlist, and a renamed file is imported as a new playlist. An image with the same base name (<code class="settings-inline-code">.jpg</code>, <code class="settings-inline-code">.png</code> or <code class="settings-inline-code">.webp</code>, up to 5 MB) becomes the playlist artwork.</div>
+                <div class="settings-card-sub" style="margin-top:8px">Mount the folder into the container, for example <code class="settings-inline-code">./playlists:/app/playlists:ro</code>. Write each file under a temporary name and rename it when it is complete.</div>
+                <label class="settings-toggle" style="margin-top:8px">
+                  <input type="checkbox" name="enabled" value="1" <%= _pw.enabled ? 'checked' : '' %> />
+                  <span class="settings-toggle-slider" aria-hidden="true"></span>
+                  <span class="settings-toggle-text">Watch folder for playlists</span>
+                </label>
+                <label class="field">
+                  <span>Folder path</span>
+                  <input type="text" name="path" value="<%= _pw.path || '' %>" placeholder="/app/playlists" />
+                </label>
+                <label class="field">
+                  <span>Playlist owner</span>
+                  <select name="ownerUserId">
+                    <option value="">Choose a user…</option>
+                    <% (playlistWatchOwnerOptions || []).forEach(function(opt) { %>
+                    <option value="<%= opt.id %>" <%= opt.id === _pw.ownerUserId ? 'selected' : '' %>><%= opt.name %></option>
+                    <% }) %>
+                  </select>
+                </label>
+                <div class="settings-card-sub" style="margin-top:2px">A new owner applies to newly imported files. Existing playlists stay with their current owner.</div>
+                <label class="settings-toggle" style="margin-top:8px">
+                  <input type="checkbox" name="audience" value="global" <%= _pw.audience === 'global' ? 'checked' : '' %> />
+                  <span class="settings-toggle-slider" aria-hidden="true"></span>
+                  <span class="settings-toggle-text">Share as global playlists (copied to every user)</span>
+                </label>
+                <label class="settings-toggle" style="margin-top:4px">
+                  <input type="checkbox" name="removeMissing" value="1" <%= _pw.removeMissing ? 'checked' : '' %> />
+                  <span class="settings-toggle-slider" aria-hidden="true"></span>
+                  <span class="settings-toggle-text">Delete playlists whose file is removed</span>
+                </label>
+                <div class="settings-card-sub" style="margin-top:2px">When this is off, a playlist whose file is removed is kept and marked as missing its source.</div>
+                <% const _pwJob = playlistWatchJobStatus; %>
+                <% if (_pwJob && _pwJob.lastRunAt) { %>
+                <div class="settings-card-sub" style="margin-top:8px">Last scan <%= new Date(Number(_pwJob.lastRunAt)).toLocaleString() %>: <%= _pwJob.message || _pwJob.status %></div>
+                <% } %>
+                <% if ((playlistWatchFiles || []).length) { %>
+                <details style="margin-top:8px">
+                  <summary class="settings-card-sub" style="cursor:pointer">Tracked files (<%= playlistWatchFiles.length %>)</summary>
+                  <div style="overflow-x:auto;margin-top:6px">
+                    <table style="width:100%;font-size:12px;border-collapse:collapse">
+                      <thead><tr style="text-align:left;opacity:.7"><th style="padding:4px 8px 4px 0">File</th><th style="padding:4px 8px">Status</th><th style="padding:4px 8px">Owner</th><th style="padding:4px 0 4px 8px">Last imported</th></tr></thead>
+                      <tbody>
+                        <% playlistWatchFiles.forEach(function(f) { %>
+                        <tr style="border-top:1px solid rgba(255,255,255,.08)">
+                          <td style="padding:4px 8px 4px 0;word-break:break-all"><%= f.relPath %></td>
+                          <td style="padding:4px 8px"><%= ({ ok: 'Imported', missing: 'Source missing', deleted: 'Deleted in Curatorr', error: 'Error', pending: 'Pending' })[f.status] || f.status %><% if (f.message) { %><div style="opacity:.7"><%= f.message %></div><% } %></td>
+                          <td style="padding:4px 8px"><%= f.userPlexId || '—' %></td>
+                          <td style="padding:4px 0 4px 8px;white-space:nowrap"><%= f.lastImportedAt ? new Date(f.lastImportedAt).toLocaleString() : '—' %></td>
+                        </tr>
+                        <% }) %>
+                      </tbody>
+                    </table>
+                  </div>
+                </details>
+                <% } %>
+              </div>
+              <div class="settings-card-actions settings-card-actions--full">
+                <button class="primary-button" type="submit">Save watch folder</button>
+                <button class="ghost-button" type="button" id="playlistWatchScanBtn" <%= _pw.enabled ? '' : 'disabled title="Enable and save the watch folder first."' %>>Scan now</button>
+                <span id="playlistWatchScanStatus" class="settings-card-sub"></span>
+              </div>
+            </form>
+            <script>
+            (function() {
+              var btn = document.getElementById('playlistWatchScanBtn');
+              var statusEl = document.getElementById('playlistWatchScanStatus');
+              if (!btn) return;
+              btn.addEventListener('click', function() {
+                var csrf = document.querySelector('#playlist-watch-folder [name=_csrf]');
+                btn.disabled = true;
+                statusEl.textContent = 'Scanning…';
+                fetch('/api/jobs/playlistWatchFolder/run', { method: 'POST', headers: { 'X-CSRF-Token': csrf ? csrf.value : '' } })
+                  .then(function(res) { if (!res.ok) throw new Error('HTTP ' + res.status); return poll(0); })
+                  .catch(function(err) { statusEl.textContent = 'Scan failed to start: ' + err.message; btn.disabled = false; });
+              });
+              function poll(attempt) {
+                return new Promise(function(resolve) { setTimeout(resolve, 1500); })
+                  .then(function() { return fetch('/api/jobs/status').then(function(res) { return res.json(); }); })
+                  .then(function(status) {
+                    var job = status && status.playlistWatchFolder;
+                    if (job && job.isRunning && attempt < 200) return poll(attempt + 1);
+                    window.location.assign('/settings?tab=smart-playlist&scanned=1#playlist-watch-folder');
+                  });
+              }
+            })();
+            </script>
+            <% } %>
+
             <%# ── Global Playlists ────────────────────────────────────────── %>
             <%# Builder card %>
             <div class="settings-card gp-builder-card" style="display:none">

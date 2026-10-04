@@ -78,6 +78,11 @@ export const JOB_DEFS = {
     description: 'Re-queues failed Lidarr add requests so they are picked up by the next queue processing run. Requests that have already been retried 3 times are skipped.',
     defaultIntervalMinutes: 1440,
   },
+  playlistWatchFolder: {
+    label: 'Playlist Watch Folder',
+    description: 'Imports new M3U/M3U8 files from the playlist watch folder, refreshes playlists whose file changed, and applies matching artwork. Configure the folder in Settings → Playlists.',
+    defaultIntervalMinutes: 15,
+  },
 };
 
 // ─── Service factory ──────────────────────────────────────────────────────────

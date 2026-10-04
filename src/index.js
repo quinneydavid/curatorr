@@ -673,6 +673,7 @@ const DEFAULT_JOBS_CONFIG = {
   lidarrRetryFailed:   { intervalMinutes: 1440,  enabled: true },
   lastfmTagSync:       { intervalMinutes: 10080, enabled: true },
   lastfmHistorySync:   { intervalMinutes: 60,    enabled: false },
+  playlistWatchFolder: { intervalMinutes: 15,    enabled: true },
 };
 
 const DEFAULT_CONFIG = {
@@ -704,6 +705,7 @@ const DEFAULT_CONFIG = {
   logs: { ...DEFAULT_LOG_SETTINGS },
   jobs: { ...DEFAULT_JOBS_CONFIG },
   globalPlaylists: [],
+  playlistWatchFolder: { enabled: false, path: '', ownerUserId: '', audience: 'personal', removeMissing: false },
 };
 
 function loadConfig() {
@@ -2151,6 +2153,7 @@ export async function start() {
         return _routeCtx.lidarrService?.reviewDueArtists({ limit: 20 });
       },
       lidarrProcessQueue: () => _routeCtx.lidarrService?.processQueuedRequests({ limit: 10 }),
+      playlistWatchFolder: () => _routeCtx.scanPlaylistWatchFolder?.(),
       lidarrRetryFailed: async () => {
         const MAX_RETRIES = 3;
         const STUCK_PROCESSING_MS = 60 * 60 * 1000; // 1 hour
